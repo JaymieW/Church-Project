@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hope Church Lavington Attendance Hub & Analytics</title>
+    
+    <!-- Load Chart.js Framework via secure CDN -->
+    <script src="https://jsdelivr.net" defer></script>
+
+    <!-- Connect your external stylesheet file -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- Banner Header Layout Module Section -->
+    <h1 class="header-title">
+        <img src="images/HopeChurch_Logo_Dark.png" alt="Hope Church Logo" class="church-logo">
+        <span>Hope Church Lavington: Attendance Hub & Analytics</span>
+    </h1>
+    
+    <!-- Tab Controls with Reports link -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('service-form', this)">Main Services</button>
+        <button class="tab-btn" onclick="switchTab('school-form', this)">Sunday School</button>
+        <button class="tab-btn" onclick="switchTab('report-dashboard', this)">Pastor Reports & Graphs</button>
+    </div>
+
+    <!-- MAIN SERVICE FORM -->
+    <form id="serviceForm" class="form-card active" onsubmit="handleSubmit(event, 'service')">
+        <div class="form-group"><label>Date</label><input type="date" id="serviceDate" required></div>
+        <div class="form-group">
+    <label>Service Session</label>
+    <!-- Added onchange event handler hook to listen for service selections dynamically -->
+    <select id="serviceSession" required onchange="handleSessionChange()">
+        <option value="" disabled selected hidden>-- Select a Session --</option>
+        <option value="1st Service">1st Service</option>
+        <option value="2nd Service">2nd Service</option>
+        <option value="Engage Youth Service">Engage Youth Service</option>
+    </select>
+</div>
+
+        <div class="grid">
+            <div class="form-group"><label>Men</label><input type="number" id="men" min="0" value="0"></div>
+            <div class="form-group"><label>Women</label><input type="number" id="women" min="0" value="0"></div>
+        </div>
+        <div class="grid">
+            <div class="form-group"><label>Youth</label><input type="number" id="youth" min="0" value="0"></div>
+            <div class="form-group"><label>Children</label><input type="number" id="children" min="0" value="0"></div>
+        </div>
+        <div class="grid">
+            <div class="form-group"><label>Volunteers</label><input type="number" id="volunteers" min="0" value="0"></div>
+            <div class="form-group"><label>New Visitors</label><input type="number" id="visitors" min="0" value="0"></div>
+        </div>
+        <button type="submit">Submit Service Headcount</button>
+        <div id="serviceStatus" class="status"></div>
+    </form>
+
+    <!-- SUNDAY SCHOOL ROSTER -->
+    <form id="schoolForm" class="form-card" onsubmit="handleSubmit(event, 'school')">
+        <div class="form-group"><label>Date</label><input type="date" id="schoolDate" required></div>
+        <div class="form-group"><label>Class/Age Group</label><select id="className" required><option value="Toddlers (1-3)">Toddlers (1-3)</option><option value="Pre-K (4-6)">Pre-K (4-6)</option><option value="Primary (7-10)">Primary (7-10)</option><option value="Pre-Teens (11-12)">Pre-Teens (11-12)</option></select></div>
+        <div class="form-group"><label>Total Children Attended</label><input type="number" id="schoolTotal" min="0" required></div>
+        <div class="form-group"><label>Teacher/Servant Name</label><input type="text" id="teacherName" placeholder="e.g. Teacher Sarah" required></div>
+        <button type="submit">Submit Sunday School Entry</button>
+        <div id="schoolStatus" class="status"></div>
+    </form>
+
+    <!-- PASTOR REPORT DASHBOARD -->
+    <div id="reportDashboard" class="form-card">
+        <h2>Attendance Trends & Visuals</h2>
+        
+        <div class="grid">
+            <div class="form-group"><label>Start Date</label><input type="date" id="startDate" required></div>
+            <div class="form-group"><label>End Date</label><input type="date" id="endDate" required></div>
+        </div>
+        <button class="report-btn" onclick="fetchReports()">Compile & Update Graphs</button>
+        <div id="reportStatus" class="status"></div>
+
+        <div class="metrics-grid">
+            <div class="metric-box"><h3>1st Service Avg</h3><p id="avgS1">0</p></div>
+            <div class="metric-box"><h3>2nd Service Avg</h3><p id="avgS2">0</p></div>
+            <div class="metric-box"><h3>SS Avg Total</h3><p id="avgSchool">0</p></div>
+            <div class="metric-box"><h3>Total Visitors</h3><p id="totalVisitors">0</p></div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Timeline Comparison (1st vs. 2nd Service Total Trend)</div>
+            <canvas id="trendLineChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Session Breakdown Comparison (Demographics Matrix)</div>
+            <canvas id="breakdownBarChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Automatically calculate today's short-form calendar date string
+    const today = new Date().toISOString().split('T')[0];
+    
+    // TODO: PASTE THE BLUE DEPLOYMENT WEB APP URL COPIED FROM GOOGLE APPS SCRIPT BELOW
+    const WEB_APP_URL = "YOUR_SCRIPT_URL_HERE";
+
+    let trendChartInstance = null;
+    let breakdownChartInstance = null;
+
+    // Secure initialization listener block wrapper
+    document.addEventListener("DOMContentLoaded", () => {
+        // 1. Assign local dates to form selectors once elements finish drawing
+        document.getElementById('serviceDate').value = today;
+        document.getElementById('schoolDate').value = today;
+        document.getElementById('startDate').value = today;
+        document.getElementById('endDate').value = today;
+        
+        // 2. Fire conditions mapping immediately to lock Youth and Children input grids by default
+        handleSessionChange();
+    });
+
+
+
+    /**
+     * Toggles visibility filters across view containers cleanly without event blocking loops
+     */
+    function switchTab(formId, element) {
+        // Hide all active forms instantly
+        document.querySelectorAll('.form-card').forEach(f => f.classList.remove('active'));
+        // Remove high-contrast blue highlight off all tab control buttons
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        
+        // Apply active class style rules directly to clicked element
+        element.classList.add('active');
+        
+        // Map visibility routing safely
+        if (formId === 'service-form') {
+            document.getElementById('serviceForm').classList.add('active');
+        } else if (formId === 'school-form') {
+            document.getElementById('schoolForm').classList.add('active');
+        } else if (formId === 'report-dashboard') {
+            document.getElementById('reportDashboard').classList.add('active');
+        }
+    }
+    /**
+ * Automatically locks or unlocks input fields based on the selected service session
+ */
+
+/**
+ * Strict condition gatekeeper for demographic input validation
+ */
+function handleSessionChange() {
+    const session = document.getElementById('serviceSession').value;
+    const youthInput = document.getElementById('youth');
+    const childrenInput = document.getElementById('children');
+
+    if (session === "") {
+        // STATE 1: Unselected / Blank top row
+        // Instantly wipe values to 0 and deactivate BOTH inputs completely
+        youthInput.value = 0;
+        youthInput.disabled = true;
+        
+        childrenInput.value = 0;
+        childrenInput.disabled = true;
+    } 
+    else if (session === "Engage Youth Service") {
+        // STATE 2: Engage Youth Service selected
+        // Only youth is active. Wipes and locks children to 0.
+        youthInput.disabled = false;
+        
+        childrenInput.value = 0;
+        childrenInput.disabled = true;
+    } 
+    else {
+        // STATE 3: 1st Service or 2nd Service selected
+        // Normal mode: Both inputs are fully active
+        youthInput.disabled = false;
+        childrenInput.disabled = false;
+    }
+}
+
+
+
+    /**
+     * Processes form data submission hooks asynchronously
+     */
+    function handleSubmit(e, type) {
+        e.preventDefault();
+        const statusEl = document.getElementById(type + 'Status');
+        statusEl.className = 'status'; 
+        statusEl.innerText = "Saving data...";
+        
+        let payload = { formType: type };
+        if (type === 'service') {
+            payload.date = document.getElementById('serviceDate').value;
+            payload.session = document.getElementById('serviceSession').value;
+            payload.men = document.getElementById('men').value;
+            payload.women = document.getElementById('women').value;
+            payload.youth = document.getElementById('youth').value;
+            payload.children = document.getElementById('children').value;
+            payload.volunteers = document.getElementById('volunteers').value;
+            payload.visitors = document.getElementById('visitors').value;
+        } else {
+            payload.date = document.getElementById('schoolDate').value;
+            payload.className = document.getElementById('className').value;
+            payload.total = document.getElementById('schoolTotal').value;
+            payload.teacher = document.getElementById('teacherName').value;
+        }
+        
+        fetch(WEB_APP_URL, { 
+            method: 'POST', 
+            mode: 'no-cors', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(payload) 
+        })
+        .then(() => {
+            statusEl.className = 'status success'; 
+            statusEl.innerText = "Data successfully saved to Google Sheets!";
+            e.target.reset();
+            document.getElementById('serviceDate').value = today; 
+            document.getElementById('schoolDate').value = today;
+        })
+        .catch(err => { 
+            statusEl.className = 'status error'; 
+            statusEl.innerText = "Submission failed."; 
+            console.error(err); 
+        });
+    }
+
+    /**
+     * Compiles entry metrics and renders multi-series line and bar tracking charts
+     */
+    function fetchReports() {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        const statusEl = document.getElementById('reportStatus');
+        
+        statusEl.className = 'status'; 
+        statusEl.innerText = "Querying data trends and rendering charts...";
+
+        fetch(`${WEB_APP_URL}?start=${start}&end=${end}`)
+        .then(response => response.json())
+        .then(res => {
+            if (res.status !== "success") throw new Error(res.message);
+            
+            statusEl.className = 'status success'; 
+            statusEl.innerText = "Analytics loaded successfully!";
+            
+            document.getElementById('avgS1').innerText = Math.round(res.summary.service1.avgTotal);
+            document.getElementById('avgS2').innerText = Math.round(res.summary.service2.avgTotal);
+            document.getElementById('avgSchool').innerText = Math.round(res.summary.avgSundaySchoolOnly);
+            document.getElementById('totalVisitors').innerText = res.summary.totalVisitors;
+
+            if (trendChartInstance) trendChartInstance.destroy();
+            if (breakdownChartInstance) breakdownChartInstance.destroy();
+
+            const ctxLine = document.getElementById('trendLineChart').getContext('2d');
+            trendChartInstance = new Chart(ctxLine, {
+                type: 'line',
+                data: {
+                    labels: res.timeline.dates,
+                    datasets: [
+                        { label: '1st Service Trend', data: res.timeline.s1Totals, borderColor: '#2563eb', backgroundColor: 'transparent', borderWidth: 3, tension: 0.2 },
+                        { label: '2nd Service Trend', data: res.timeline.s2Totals, borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 3, tension: 0.2 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            const ctxBar = document.getElementById('breakdownBarChart').getContext('2d');
+            breakdownChartInstance = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: ['Adults', 'Children'],
+                    datasets: [
+                        { label: '1st Service', data: [res.summary.service1.avgAdults, res.summary.service1.avgChildren], backgroundColor: '#3b82f6', borderRadius: 4 },
+                        { label: '2nd Service', data: [res.summary.service2.avgAdults, res.summary.service2.avgChildren], backgroundColor: '#ef4444', borderRadius: 4 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            });
+        })
+        .catch(err => {
+            statusEl.className = 'status error'; 
+            statusEl.innerText = "Failed reading logs database.";
+            console.error(err);
+        });
+    }
+</script>
